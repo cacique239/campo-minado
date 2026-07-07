@@ -1,0 +1,218 @@
+
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+#game { padding: 1.5rem; display: flex; flex-direction: column; align-items: center; gap: 1rem; font-family: sans-serif; background: #f5f5f5; min-height: 100vh; }
+h1 { font-size: 20px; font-weight: 700; color: #222; letter-spacing: 1px; }
+#difficulty-bar { display: flex; gap: 8px; }
+.diff-btn { padding: 0.4rem 1rem; border-radius: 20px; border: 2px solid #bbb; background: #fff; font-size: 13px; font-weight: 600; cursor: pointer; color: #555; transition: all 0.15s; }
+.diff-btn:hover { border-color: #888; color: #222; }
+.diff-btn.active.easy { background: #4caf50; border-color: #4caf50; color: #fff; }
+.diff-btn.active.medium { background: #ff9800; border-color: #ff9800; color: #fff; }
+.diff-btn.active.hard { background: #e53935; border-color: #e53935; color: #fff; }
+#topbar { display: flex; gap: 1rem; align-items: center; justify-content: center; }
+.stat-card { background: #e0e0e0; border-radius: 8px; padding: 0.45rem 1rem; display: flex; align-items: center; gap: 6px; font-size: 15px; font-weight: 500; color: #222; min-width: 70px; justify-content: center; }
+#reset-btn { background: #fff; border: 1px solid #bbb; border-radius: 8px; padding: 0.45rem 1rem; font-size: 14px; font-weight: 500; cursor: pointer; color: #222; transition: background 0.15s; }
+#reset-btn:hover { background: #e0e0e0; }
+
+#mode-bar { display: flex; gap: 10px; align-items: center; }
+#mode-label { font-size: 13px; color: #666; font-weight: 500; }
+#flag-btn { padding: 0.45rem 1.2rem; border-radius: 20px; border: 2px solid #bbb; background: #fff; font-size: 14px; font-weight: 700; cursor: pointer; color: #555; transition: all 0.15s; }
+#flag-btn.active { background: #e91e8c; border-color: #e91e8c; color: #fff; }
+
+#board-wrapper { overflow-x: auto; max-width: 100%; }
+#board { display: grid; gap: 2px; }
+.cell { width: 36px; height: 36px; border-radius: 5px; border: 1px solid #bbb; background: #d0d0d0; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; transition: background 0.1s, transform 0.08s; user-select: none; color: #222; }
+.cell:hover:not(.revealed):not(.exploded) { background: #bcbcbc; }
+.cell.revealed { background: #f0f0f0; cursor: default; border-color: #ccc; }
+.cell.flagged { background: #d0d0d0; }
+.cell.exploded { background: #f7a0a0; border-color: #e06060; }
+.cell.mine-revealed { background: #f0f0f0; }
+.n1 { color: #185FA5; } .n2 { color: #3B6D11; } .n3 { color: #A32D2D; }
+.n4 { color: #3C3489; } .n5 { color: #854F0B; } .n6 { color: #0F6E56; }
+.n7 { color: #222; } .n8 { color: #888; }
+#message { font-size: 16px; font-weight: 600; color: #222; min-height: 24px; }
+#hint { font-size: 12px; color: #888; }
+</style>
+
+<div id="game">
+  <h1>💣 Campo Minado</h1>
+
+  <div id="difficulty-bar">
+    <button class="diff-btn easy active" onclick="setDifficulty('easy')">😊 Fácil</button>
+    <button class="diff-btn medium" onclick="setDifficulty('medium')">😐 Médio</button>
+    <button class="diff-btn hard" onclick="setDifficulty('hard')">💀 Difícil</button>
+  </div>
+
+  <div id="topbar">
+    <div class="stat-card">💣 <span id="mine-count">10</span></div>
+    <button id="reset-btn" onclick="initGame()">🔄 novo jogo</button>
+    <div class="stat-card">⏱ <span id="timer">0</span>s</div>
+  </div>
+
+  <div id="mode-bar">
+    <span id="mode-label">Modo:</span>
+    <button id="flag-btn" onclick="toggleFlagMode()">🚩 Bandeira</button>
+  </div>
+
+  <div id="board-wrapper"><div id="board"></div></div>
+  <div id="message"></div>
+  <div id="hint">ative o modo bandeira para marcar minas 🚩</div>
+</div>
+
+<script>
+const DIFFICULTIES = {
+  easy:   { rows: 9,  cols: 9,  mines: 10 },
+  medium: { rows: 16, cols: 16, mines: 40 },
+  hard:   { rows: 16, cols: 30, mines: 99 },
+};
+
+let currentDiff = 'easy';
+let flagMode = false;
+let ROWS, COLS, TOTAL_MINES;
+let board, revealed, flagged, mineCount, gameOver, won, timerInterval, seconds, firstClick;
+
+function toggleFlagMode() {
+  flagMode = !flagMode;
+  const btn = document.getElementById('flag-btn');
+  btn.classList.toggle('active', flagMode);
+  document.getElementById('hint').textContent = flagMode
+    ? '🚩 Modo bandeira ativo — clique para marcar/desmarcar'
+    : 'ative o modo bandeira para marcar minas 🚩';
+}
+
+function setDifficulty(diff) {
+  currentDiff = diff;
+  document.querySelectorAll('.diff-btn').forEach(b => b.classList.remove('active'));
+  document.querySelector(`.diff-btn.${diff}`).classList.add('active');
+  initGame();
+}
+
+function initGame() {
+  const d = DIFFICULTIES[currentDiff];
+  ROWS = d.rows; COLS = d.cols; TOTAL_MINES = d.mines;
+  board    = Array.from({length: ROWS}, () => Array(COLS).fill(0));
+  revealed = Array.from({length: ROWS}, () => Array(COLS).fill(false));
+  flagged  = Array.from({length: ROWS}, () => Array(COLS).fill(false));
+  mineCount = TOTAL_MINES;
+  gameOver = false; won = false; seconds = 0; firstClick = true; flagMode = false;
+  clearInterval(timerInterval);
+  document.getElementById('timer').textContent = '0';
+  document.getElementById('mine-count').textContent = mineCount;
+  document.getElementById('message').textContent = '';
+  document.getElementById('flag-btn').classList.remove('active');
+  document.getElementById('hint').textContent = 'ative o modo bandeira para marcar minas 🚩';
+  document.getElementById('board').style.gridTemplateColumns = `repeat(${COLS}, 36px)`;
+  renderBoard();
+}
+
+function placeMines(safeR, safeC) {
+  let placed = 0;
+  while (placed < TOTAL_MINES) {
+    const r = Math.floor(Math.random() * ROWS);
+    const c = Math.floor(Math.random() * COLS);
+    if (board[r][c] !== -1 && !(Math.abs(r - safeR) <= 1 && Math.abs(c - safeC) <= 1)) {
+      board[r][c] = -1; placed++;
+    }
+  }
+  for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+    if (board[r][c] === -1) continue;
+    let count = 0;
+    for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+      const nr = r+dr, nc = c+dc;
+      if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS && board[nr][nc] === -1) count++;
+    }
+    board[r][c] = count;
+  }
+}
+
+function reveal(r, c) {
+  if (r < 0 || r >= ROWS || c < 0 || c >= COLS || revealed[r][c] || flagged[r][c]) return;
+  revealed[r][c] = true;
+  if (board[r][c] === 0)
+    for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) reveal(r+dr, c+dc);
+}
+
+function handleClick(r, c) {
+  if (gameOver || revealed[r][c]) return;
+
+  if (flagMode) {
+    flagged[r][c] = !flagged[r][c];
+    mineCount += flagged[r][c] ? -1 : 1;
+    document.getElementById('mine-count').textContent = mineCount;
+    renderBoard();
+    return;
+  }
+
+  if (flagged[r][c]) return;
+
+  if (firstClick) {
+    firstClick = false;
+    placeMines(r, c);
+    timerInterval = setInterval(() => {
+      seconds++;
+      document.getElementById('timer').textContent = seconds;
+    }, 1000);
+  }
+
+  if (board[r][c] === -1) {
+    revealed[r][c] = true;
+    gameOver = true;
+    clearInterval(timerInterval);
+    revealAll(); renderBoard();
+    document.getElementById('message').textContent = '💥 boom! você perdeu.';
+    document.getElementById('hint').textContent = '';
+    return;
+  }
+  reveal(r, c); renderBoard(); checkWin();
+}
+
+function handleRightClick(e, r, c) {
+  e.preventDefault();
+  if (gameOver || revealed[r][c]) return;
+  flagged[r][c] = !flagged[r][c];
+  mineCount += flagged[r][c] ? -1 : 1;
+  document.getElementById('mine-count').textContent = mineCount;
+  renderBoard();
+}
+
+function revealAll() {
+  for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) revealed[r][c] = true;
+}
+
+function checkWin() {
+  for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++)
+    if (!revealed[r][c] && board[r][c] !== -1) return;
+  won = true; gameOver = true;
+  clearInterval(timerInterval);
+  document.getElementById('message').textContent = '🎉 você venceu! parabéns!';
+  document.getElementById('hint').textContent = '';
+}
+
+function renderBoard() {
+  const boardEl = document.getElementById('board');
+  boardEl.innerHTML = '';
+  for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+    const cell = document.createElement('div');
+    cell.className = 'cell';
+    const isRevealed = revealed[r][c], isFlagged = flagged[r][c], isMine = board[r][c] === -1;
+    if (isRevealed) {
+      if (isMine) {
+        cell.classList.add(gameOver && !won ? 'exploded' : 'mine-revealed');
+        cell.textContent = '💣';
+      } else {
+        cell.classList.add('revealed');
+        const n = board[r][c];
+        if (n > 0) { cell.textContent = n; cell.classList.add('n'+n); }
+      }
+    } else if (isFlagged) {
+      cell.classList.add('flagged');
+      cell.textContent = '🚩';
+    }
+    cell.addEventListener('click', () => handleClick(r, c));
+    cell.addEventListener('contextmenu', e => handleRightClick(e, r, c));
+    boardEl.appendChild(cell);
+  }
+}
+
+initGame();
+</script>

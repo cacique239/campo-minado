@@ -83,6 +83,41 @@
   .n7 { color: var(--text); } .n8 { color: var(--text-muted); }
   #message { font-size: 16px; font-weight: 600; color: var(--text); min-height: 24px; }
   #hint { font-size: 12px; color: var(--text-hint); }
+
+  #ranking-btn { padding: 0.45rem 1.2rem; border-radius: 20px; border: 2px solid var(--btn-border); background: var(--btn-bg); font-size: 14px; font-weight: 700; cursor: pointer; color: var(--text-muted); transition: all 0.15s; }
+  #ranking-btn:hover { border-color: var(--btn-border-hover); color: var(--text); }
+
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex;
+    align-items: center; justify-content: center; z-index: 1000; padding: 1rem;
+  }
+  .modal-box {
+    background: var(--bg); border-radius: 12px; padding: 1.5rem; width: 100%; max-width: 380px;
+    display: flex; flex-direction: column; gap: 1rem; box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+  }
+  .modal-box h2 { font-size: 18px; color: var(--text); }
+  .modal-box input {
+    padding: 0.6rem 0.8rem; border-radius: 8px; border: 1px solid var(--btn-border);
+    background: var(--btn-bg); color: var(--text); font-size: 14px;
+  }
+  .modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+  .modal-btn { padding: 0.5rem 1.1rem; border-radius: 8px; border: 1px solid var(--btn-border); background: var(--btn-bg); color: var(--text); font-size: 14px; font-weight: 600; cursor: pointer; }
+  .modal-btn.primary { background: #4caf50; border-color: #4caf50; color: #fff; }
+  .modal-btn.primary:disabled { opacity: 0.6; cursor: default; }
+
+  .rank-tabs { display: flex; gap: 6px; }
+  .rank-tab { padding: 0.35rem 0.9rem; border-radius: 16px; border: 2px solid var(--btn-border); background: var(--btn-bg); font-size: 12px; font-weight: 600; cursor: pointer; color: var(--text-muted); }
+  .rank-tab.active { background: #2196f3; border-color: #2196f3; color: #fff; }
+  .rank-list { list-style: none; display: flex; flex-direction: column; gap: 4px; max-height: 320px; overflow-y: auto; }
+  .rank-list li {
+    display: flex; align-items: center; gap: 8px; padding: 0.4rem 0.6rem; border-radius: 6px;
+    background: var(--card-bg); font-size: 14px; color: var(--text);
+  }
+  .rank-list .pos { font-weight: 700; width: 22px; text-align: center; color: var(--text-muted); }
+  .rank-list .name { flex: 1; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rank-list .time { font-weight: 700; color: #2196f3; }
+  .rank-empty { font-size: 13px; color: var(--text-hint); text-align: center; padding: 1rem 0; }
+  .rank-loading { font-size: 13px; color: var(--text-hint); text-align: center; padding: 1rem 0; }
 </style>
 
 <div id="game">
@@ -106,12 +141,76 @@
   <div id="mode-bar">
     <span id="mode-label">Modo:</span>
     <button id="flag-btn" onclick="toggleFlagMode()">🚩 Bandeira</button>
+    <button id="ranking-btn" onclick="openRanking()">🏆 Ranking</button>
   </div>
 
   <div id="board-wrapper"><div id="board"></div></div>
   <div id="message"></div>
   <div id="hint">ative o modo bandeira para marcar minas 🚩</div>
 </div>
+
+<div id="name-modal-overlay" class="modal-overlay" style="display:none;">
+  <div class="modal-box">
+    <h2>🎉 Novo tempo: <span id="name-modal-time"></span>s</h2>
+    <input id="name-modal-input" type="text" placeholder="Seu nome" maxlength="20" />
+    <div class="modal-actions">
+      <button class="modal-btn" onclick="skipSaveScore()">Não salvar</button>
+      <button class="modal-btn primary" id="save-score-btn" onclick="submitScore()">Salvar no ranking</button>
+    </div>
+  </div>
+</div>
+
+<div id="ranking-modal-overlay" class="modal-overlay" style="display:none;">
+  <div class="modal-box" style="max-width: 420px;">
+    <h2>🏆 Ranking — menores tempos</h2>
+    <div class="rank-tabs">
+      <button class="rank-tab easy active" onclick="switchRankingTab('easy')">😊 Fácil</button>
+      <button class="rank-tab medium" onclick="switchRankingTab('medium')">😐 Médio</button>
+      <button class="rank-tab hard" onclick="switchRankingTab('hard')">💀 Difícil</button>
+    </div>
+    <ul class="rank-list" id="rank-list"></ul>
+    <div class="modal-actions">
+      <button class="modal-btn" onclick="closeRanking()">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import {
+  getFirestore, collection, addDoc, query, where, orderBy, limit, getDocs
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyAywHghiWapg91-rBujX_JP-3q-_GHVHH4",
+  authDomain: "campo-minado-d31bb.firebaseapp.com",
+  projectId: "campo-minado-d31bb",
+  storageBucket: "campo-minado-d31bb.firebasestorage.app",
+  messagingSenderId: "215572040899",
+  appId: "1:215572040899:web:13526227f066e8535aa676"
+};
+
+const firebaseApp = initializeApp(firebaseConfig);
+const db = getFirestore(firebaseApp);
+
+// Expõe pro escopo global, já que o resto do jogo usa scripts normais (não-módulo)
+window.__saveScore = async function(name, time, difficulty) {
+  await addDoc(collection(db, "scores"), {
+    name, time, difficulty, timestamp: Date.now()
+  });
+};
+
+window.__loadRanking = async function(difficulty) {
+  const q = query(
+    collection(db, "scores"),
+    where("difficulty", "==", difficulty),
+    orderBy("time", "asc"),
+    limit(10)
+  );
+  const snap = await getDocs(q);
+  return snap.docs.map(d => d.data());
+};
+</script>
 
 <script>
 const DIFFICULTIES = {
@@ -252,6 +351,83 @@ function checkWin() {
   clearInterval(timerInterval);
   document.getElementById('message').textContent = '🎉 você venceu! parabéns!';
   document.getElementById('hint').textContent = '';
+  openNameModal();
+}
+
+function openNameModal() {
+  document.getElementById('name-modal-time').textContent = seconds;
+  document.getElementById('name-modal-input').value = '';
+  document.getElementById('name-modal-overlay').style.display = 'flex';
+}
+
+function skipSaveScore() {
+  document.getElementById('name-modal-overlay').style.display = 'none';
+}
+
+async function submitScore() {
+  const input = document.getElementById('name-modal-input');
+  const name = input.value.trim();
+  if (!name) { input.focus(); return; }
+
+  const btn = document.getElementById('save-score-btn');
+  btn.disabled = true;
+  btn.textContent = 'Salvando...';
+
+  try {
+    await window.__saveScore(name, seconds, currentDiff);
+    document.getElementById('name-modal-overlay').style.display = 'none';
+  } catch (err) {
+    console.error('Erro ao salvar pontuação:', err);
+    btn.textContent = 'Erro — tentar de novo';
+  } finally {
+    btn.disabled = false;
+    if (btn.textContent === 'Salvando...') btn.textContent = 'Salvar no ranking';
+  }
+}
+
+let currentRankingTab = 'easy';
+
+function openRanking() {
+  document.getElementById('ranking-modal-overlay').style.display = 'flex';
+  switchRankingTab(currentRankingTab);
+}
+
+function closeRanking() {
+  document.getElementById('ranking-modal-overlay').style.display = 'none';
+}
+
+async function switchRankingTab(diff) {
+  currentRankingTab = diff;
+  document.querySelectorAll('.rank-tab').forEach(b => b.classList.remove('active'));
+  document.querySelector(`.rank-tab.${diff}`).classList.add('active');
+
+  const list = document.getElementById('rank-list');
+  list.innerHTML = '<div class="rank-loading">carregando...</div>';
+
+  try {
+    const scores = await window.__loadRanking(diff);
+    if (scores.length === 0) {
+      list.innerHTML = '<div class="rank-empty">nenhum tempo registrado ainda — seja o primeiro!</div>';
+      return;
+    }
+    const medals = ['🥇', '🥈', '🥉'];
+    list.innerHTML = scores.map((s, i) => `
+      <li>
+        <span class="pos">${medals[i] || (i+1)}</span>
+        <span class="name">${escapeHtml(s.name)}</span>
+        <span class="time">${s.time}s</span>
+      </li>
+    `).join('');
+  } catch (err) {
+    console.error('Erro ao carregar ranking:', err);
+    list.innerHTML = '<div class="rank-empty">não foi possível carregar o ranking agora.</div>';
+  }
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
 }
 
 function renderBoard() {

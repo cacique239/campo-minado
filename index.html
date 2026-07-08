@@ -178,7 +178,7 @@
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
-  getFirestore, collection, addDoc, query, where, orderBy, limit, getDocs
+  getFirestore, collection, doc, getDoc, setDoc, query, where, orderBy, limit, getDocs
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -193,11 +193,27 @@ const firebaseConfig = {
 const firebaseApp = initializeApp(firebaseConfig);
 const db = getFirestore(firebaseApp);
 
+function slugify(name) {
+  return name.toLowerCase().trim()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // remove acentos
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 40) || 'anonimo';
+}
+
 // Expõe pro escopo global, já que o resto do jogo usa scripts normais (não-módulo)
+// Retorna: 'saved' (novo recorde salvo) ou 'not_better' (tempo anterior já era melhor ou igual)
 window.__saveScore = async function(name, time, difficulty) {
-  await addDoc(collection(db, "scores"), {
-    name, time, difficulty, timestamp: Date.now()
-  });
+  const docId = `${difficulty}__${slugify(name)}`;
+  const ref = doc(db, "scores", docId);
+  const existing = await getDoc(ref);
+
+  if (existing.exists() && existing.data().time <= time) {
+    return 'not_better';
+  }
+
+  await setDoc(ref, { name, time, difficulty, timestamp: Date.now() });
+  return 'saved';
 };
 
 window.__loadRanking = async function(difficulty) {
@@ -374,7 +390,14 @@ async function submitScore() {
   btn.textContent = 'Salvando...';
 
   try {
-    await window.__saveScore(name, seconds, currentDiff);
+    const result = await window.__saveScore(name, seconds, currentDiff);
+    if (result === 'not_better') {
+      btn.textContent = 'Seu recorde já era melhor 😉';
+      setTimeout(() => {
+        document.getElementById('name-modal-overlay').style.display = 'none';
+      }, 1400);
+      return;
+    }
     document.getElementById('name-modal-overlay').style.display = 'none';
   } catch (err) {
     console.error('Erro ao salvar pontuação:', err);
@@ -458,4 +481,3 @@ function renderBoard() {
 
 initGame();
 </script>
-

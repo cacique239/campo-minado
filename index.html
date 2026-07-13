@@ -70,6 +70,12 @@
   #flag-btn { padding: 0.45rem 1.2rem; border-radius: 20px; border: 2px solid var(--btn-border); background: var(--btn-bg); font-size: 14px; font-weight: 700; cursor: pointer; color: var(--text-muted); transition: all 0.15s; }
   #flag-btn.active { background: #e91e8c; border-color: #e91e8c; color: #fff; }
 
+  /* Em dispositivos com mouse (ponteiro fino), o botão direito já marca bandeira,
+     então escondemos o toggle pra não poluir a interface */
+  @media (pointer: fine) {
+    #flag-btn { display: none; }
+  }
+
   #board-wrapper { overflow-x: auto; max-width: 100%; }
   #board { display: grid; gap: 2px; }
   .cell { width: 36px; height: 36px; border-radius: 5px; border: 1px solid var(--btn-border); background: var(--cell-bg); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; transition: background 0.1s, transform 0.08s; user-select: none; color: var(--text); }
@@ -238,7 +244,7 @@ const DIFFICULTIES = {
 let currentDiff = 'easy';
 let flagMode = false;
 let ROWS, COLS, TOTAL_MINES;
-let board, revealed, flagged, mineCount, gameOver, won, timerInterval, seconds, firstClick;
+let board, revealed, flagged, mineCount, gameOver, won, timerInterval, seconds, firstClick, startTime;
 
 function toggleTheme() {
   const gameEl = document.getElementById('game');
@@ -252,13 +258,23 @@ function toggleTheme() {
   document.querySelector('#theme-toggle .knob').textContent = next === 'dark' ? '🌙' : '☀️';
 }
 
+function isDesktop() {
+  return window.matchMedia('(pointer: fine)').matches;
+}
+
+function defaultHintText() {
+  return isDesktop()
+    ? 'clique com o botão direito para marcar/desmarcar uma bandeira 🚩'
+    : 'ative o modo bandeira para marcar minas 🚩';
+}
+
 function toggleFlagMode() {
   flagMode = !flagMode;
   const btn = document.getElementById('flag-btn');
   btn.classList.toggle('active', flagMode);
   document.getElementById('hint').textContent = flagMode
     ? '🚩 Modo bandeira ativo — clique para marcar/desmarcar'
-    : 'ative o modo bandeira para marcar minas 🚩';
+    : defaultHintText();
 }
 
 function setDifficulty(diff) {
@@ -281,7 +297,7 @@ function initGame() {
   document.getElementById('mine-count').textContent = mineCount;
   document.getElementById('message').textContent = '';
   document.getElementById('flag-btn').classList.remove('active');
-  document.getElementById('hint').textContent = 'ative o modo bandeira para marcar minas 🚩';
+  document.getElementById('hint').textContent = defaultHintText();
   document.getElementById('board').style.gridTemplateColumns = `repeat(${COLS}, 36px)`;
   renderBoard();
 }
@@ -329,6 +345,7 @@ function handleClick(r, c) {
   if (firstClick) {
     firstClick = false;
     placeMines(r, c);
+    startTime = Date.now();
     timerInterval = setInterval(() => {
       seconds++;
       document.getElementById('timer').textContent = seconds;
@@ -365,6 +382,12 @@ function checkWin() {
     if (!revealed[r][c] && board[r][c] !== -1) return;
   won = true; gameOver = true;
   clearInterval(timerInterval);
+
+  // Recalcula o tempo real com base no relógio do sistema, em vez de confiar
+  // só no contador do setInterval (que pode ser interrompido via console)
+  seconds = Math.round((Date.now() - startTime) / 1000);
+  document.getElementById('timer').textContent = seconds;
+
   document.getElementById('message').textContent = '🎉 você venceu! parabéns!';
   document.getElementById('hint').textContent = '';
   openNameModal();
@@ -481,4 +504,3 @@ function renderBoard() {
 
 initGame();
 </script>
-##D0DS
